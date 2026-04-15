@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Public Meeting — Speaker Queue</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Playfair+Display:wght@700;900&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #1a1410;
+    --paper: #ffffff;
+    --cream: #ede8da;
+    --rule: #c8bfa8;
+    --gold: #e87722;
+    --gold-light: #d4a017;
+    --red: #8b2020;
+    --green: #2d5a27;
+    --muted: #6b6355;
+    --active-bg: #1a1410;
+    --active-fg: #f5f0e8;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Masthead */
+  header {
+    border-bottom: 2px solid var(--ink);
+    padding: 12px 32px 10px;
+    display: flex;
+    align-items: baseline;
+    gap: 24px;
+    background: var(--paper);
+    flex-shrink: 0;
+  }
+
+  header h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  header .subtitle {
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+    border-left: 1px solid var(--rule);
+    padding-left: 24px;
+  }
+
+  header .header-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .speaker-count {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+  }
+
+  /* ── Timer Hero ─────────────────────────────────────────────────── */
+  .timer-hero {
+    flex: 1;
+    border-bottom: 3px double var(--ink);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    padding: 8px 32px 6px;
+    position: relative;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  .timer-label {
+    font-size: 0.68rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-family: 'DM Mono', monospace;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+
+  .timer-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 5.4rem;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+  }
+
+  .timer-name.empty {
+    color: var(--muted);
+    font-style: italic;
+    font-weight: 400;
+    font-size: 1.2rem;
+  }
+
+  .timer-display {
+    font-family: 'DM Mono', monospace;
+    font-size: 40.5vh;
+    font-weight: 500;
+    letter-spacing: -4px;
+    line-height: 1;
+    transition: color 0.3s;
+    margin: 0 0 4px;
+  }
+
+  .timer-display.warning { color: var(--gold); }
+  .timer-display.danger  { color: var(--red); }
+
+  .timer-controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  /* Progress bar pinned to bottom of hero */
+  .timer-bar-wrap {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 6px;
+    background: var(--cream);
+    overflow: hidden;
+  }
+
+  .timer-bar {
+    height: 100%;
+    background: var(--ink);
+    transition: width 1s linear, background 0.3s;
+    width: 100%;
+  }
+
+  .timer-bar.warning { background: var(--gold); }
+  .timer-bar.danger  { background: var(--red); }
+
+  /* ── Bottom layout ──────────────────────────────────────────────── */
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, calc(90.72% - 355px)) 110px 1fr;
+    height: 40vh;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  .queue-panel { overflow-y: auto; }
+
+  /* Queue panel */
+  .queue-panel {
+    border-right: 1px solid var(--rule);
+  }
+
+  .panel-head {
+    padding: 12px 28px;
+    border-bottom: 1px solid var(--rule);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .panel-label {
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    font-weight: 500;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+  }
+
+  /* Speaker rows */
+  .speaker-list { list-style: none; }
+
+  .speaker-row {
+    display: grid;
+    grid-template-columns: 40px 1fr auto auto;
+    align-items: center;
+    gap: 0;
+    border-bottom: 1px solid var(--cream);
+    transition: background 0.15s;
+    position: relative;
+    animation: slide-in 0.2s ease both;
+  }
+
+  .speaker-row:hover:not(.is-active):not(.is-done) { background: var(--cream); }
+
+  .speaker-row.is-active {
+    background: var(--active-bg);
+    color: var(--active-fg);
+    border-bottom-color: #333;
+  }
+
+  .speaker-row.is-done {
+    opacity: 0.45;
+    background: var(--cream);
+  }
+
+  .row-num {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-align: center;
+    padding: 14px 0;
+    border-right: 1px solid var(--cream);
+  }
+
+  .is-active .row-num { color: #888; border-right-color: #333; }
+  .is-done .row-num   { color: var(--muted); }
+
+  .row-name {
+    padding: 14px 20px;
+    font-size: 1.3rem;
+    font-weight: 400;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .row-topic {
+    font-size: 1rem;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  .is-active .row-topic { color: #888; }
+
+  .is-active .row-name { font-weight: 500; }
+
+  .row-tag {
+    padding: 14px 12px;
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-family: 'DM Mono', monospace;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .is-active .row-tag { color: #888; }
+
+  .tag-done {
+    color: var(--green) !important;
+    font-weight: 500;
+  }
+
+  .row-actions {
+    padding: 8px 14px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .btn-icon {
+    width: 28px; height: 28px;
+    border: 1px solid var(--rule);
+    background: transparent;
+    border-radius: 3px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px;
+    color: var(--muted);
+    transition: all 0.12s;
+    flex-shrink: 0;
+  }
+
+  .btn-icon:hover { border-color: var(--ink); color: var(--ink); background: var(--cream); }
+
+  .is-active .btn-icon { border-color: #444; color: #aaa; }
+  .is-active .btn-icon:hover { border-color: #aaa; color: var(--active-fg); background: #333; }
+
+  .btn-start {
+    padding: 6px 14px;
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    border-radius: 3px;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-family: 'DM Mono', monospace;
+    cursor: pointer;
+    transition: all 0.12s;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+
+  .btn-start:hover { background: var(--gold); color: var(--ink); }
+
+  /* Right control panel */
+  .control-panel {
+    padding: 5px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    background: var(--paper);
+  }
+
+  .btn {
+    padding: 8px 18px;
+    border: 1.5px solid var(--ink);
+    background: transparent;
+    border-radius: 2px;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-family: 'DM Mono', monospace;
+    cursor: pointer;
+    transition: all 0.12s;
+    font-weight: 500;
+    color: var(--ink);
+  }
+
+  .btn:hover { background: var(--ink); color: var(--paper); }
+  .btn:disabled { opacity: 0.3; cursor: default; }
+  .btn:disabled:hover { background: transparent; color: var(--ink); }
+
+  .btn-sm {
+    padding: 4px 8px;
+    font-size: 0.62rem;
+  }
+
+  .btn-primary {
+    background: var(--ink);
+    color: var(--paper);
+  }
+  .btn-primary:hover { background: var(--gold); border-color: var(--gold); color: var(--ink); }
+
+  /* Duration selector */
+  .duration-block {
+    border: 1px solid var(--rule);
+    padding: 16px;
+    background: var(--cream);
+  }
+
+  .section-label {
+    font-size: 0.68rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-family: 'DM Mono', monospace;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+
+  .duration-pills {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .custom-duration-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .custom-duration-input {
+    width: 32px;
+    flex: none;
+    text-align: center;
+    padding: 6px 2px;
+    border: 1.5px solid var(--rule);
+    border-radius: 2px;
+    background: var(--paper);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--ink);
+    outline: none;
+  }
+
+  .custom-duration-input::-webkit-inner-spin-button,
+  .custom-duration-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+  .custom-duration-input { -moz-appearance: textfield; }
+
+  .custom-duration-unit {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    margin: 0 -5px;
+  }
+
+  .pill {
+    padding: 6px 14px;
+    border: 1.5px solid var(--rule);
+    background: var(--paper);
+    border-radius: 2px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.12s;
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  .pill:hover, .pill.active {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+
+  /* Add speaker block */
+  .add-block {
+    border: 1px solid var(--rule);
+    padding: 16px;
+  }
+
+  .add-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .add-form {
+    display: grid;
+    grid-template-areas: "name btn" "topic topic";
+    grid-template-columns: 1fr auto;
+    gap: 6px;
+  }
+
+  .name-input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1.5px solid var(--rule);
+    background: var(--paper);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.9rem;
+    color: var(--ink);
+    border-radius: 2px;
+    outline: none;
+    transition: border-color 0.12s;
+  }
+
+  .name-input:focus { border-color: var(--ink); }
+  .name-input::placeholder { color: var(--muted); }
+
+  /* Stats strip */
+  .stats-strip {
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--rule);
+    border-right: 1px solid var(--rule);
+    background: var(--cream);
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .stat {
+    flex: 1;
+    padding: 8px 12px;
+    text-align: center;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .stat:last-child { border-bottom: none; }
+
+  .stat-val {
+    font-family: 'DM Mono', monospace;
+    font-size: 1.5rem;
+    font-weight: 500;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .stat-label {
+    font-size: 0.62rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+  }
+
+  /* Empty state */
+  .empty-state {
+    padding: 48px 28px;
+    text-align: center;
+    color: var(--muted);
+  }
+
+  .empty-icon { font-size: 2rem; margin-bottom: 12px; opacity: 0.4; }
+  .empty-text { font-size: 0.85rem; font-style: italic; }
+
+  /* Pulse animation */
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.3; }
+  }
+
+  .live-dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    background: var(--red);
+    border-radius: 50%;
+    margin-right: 6px;
+    animation: pulse-dot 1.2s ease-in-out infinite;
+    vertical-align: middle;
+    position: relative;
+    top: -1px;
+  }
+
+  @keyframes slide-in {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @media (max-width: 700px) {
+    .layout { grid-template-columns: 1fr; }
+    .queue-panel { border-right: none; border-bottom: 1px solid var(--rule); }
+    .timer-display { font-size: 22vw; letter-spacing: -2px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Speaker Queue</h1>
+  <span class="subtitle">© 2026 Scott Bellware. All rights reserved.</span>
+  <div class="header-right">
+    <span class="speaker-count" id="headerCount">0 speakers</span>
+  </div>
+</header>
+
+<!-- Full-width timer hero -->
+<div class="timer-hero">
+  <div class="timer-name empty" id="timerName">No speaker active</div>
+  <div class="timer-display" id="timerDisplay">2:00</div>
+  <div class="timer-controls">
+    <button class="btn btn-primary" id="btnStart" disabled onclick="startTimer()">Start</button>
+    <button class="btn" id="btnPause" disabled onclick="pauseTimer()">Pause</button>
+    <button class="btn" id="btnReset" disabled onclick="resetTimer()">Reset</button>
+    <button class="btn" id="btnDone" disabled onclick="markDone()">Done</button>
+  </div>
+  <div class="timer-bar-wrap">
+    <div class="timer-bar" id="timerBar" style="width:100%"></div>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- Queue -->
+  <div class="queue-panel">
+    <div class="panel-head">
+      <span class="panel-label">Queue — Next Up First</span>
+      <span class="panel-label" id="queueStatus">—</span>
+    </div>
+    <ul class="speaker-list" id="speakerList">
+      <li class="empty-state" id="emptyState">
+                <div class="empty-text">No speakers in queue.</div>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-strip">
+    <div class="stat">
+      <div class="stat-val" id="statWaiting">0</div>
+      <div class="stat-label">Waiting</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val" id="statActive">—</div>
+      <div class="stat-label">Active</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val" id="statDone">0</div>
+      <div class="stat-label">Done</div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="control-panel">
+
+    <!-- Duration -->
+    <div class="duration-block">
+      <div class="section-label">Speaking Duration</div>
+      <div class="duration-pills">
+        <button class="pill active" onclick="setDuration(2)">2 min</button>
+        <button class="pill" onclick="setDuration(3)">3 min</button>
+      </div>
+      <div class="custom-duration-row">
+        <input class="custom-duration-input" type="number" id="customMins" placeholder="m" min="0" max="99"
+               onkeydown="if(event.key==='Enter') setCustomDuration()">
+        <span class="custom-duration-unit">:</span>
+        <input class="custom-duration-input" type="number" id="customSecs" placeholder="ss" min="0" max="59"
+               onkeydown="if(event.key==='Enter') setCustomDuration()">
+        <button class="btn btn-sm" onclick="setCustomDuration()">Set</button>
+      </div>
+    </div>
+
+    <!-- Add Speaker -->
+    <div class="add-block">
+      <div class="section-label">Add Speaker</div>
+      <div class="add-form">
+        <input class="name-input" type="text" id="nameInput" placeholder="Name…" maxlength="60"
+               style="grid-area:name" onkeydown="if(event.key==='Enter') document.getElementById('topicInput').focus()">
+        <input class="name-input" type="text" id="topicInput" placeholder="Topic…" maxlength="120"
+               style="grid-area:topic" onkeydown="if(event.key==='Enter') addSpeaker()">
+        <button class="btn btn-primary" style="grid-area:btn" onclick="addSpeaker()">Add</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────
+  let speakers = [];       // { id, name, status: 'waiting'|'active'|'done' }
+  let nextId = 1;
+  let durationSecs = 120;  // default 2 min
+  let remaining = durationSecs;
+  let timerInterval = null;
+  let activeId = null;
+  let isPaused = false;
+
+  // ── Duration ───────────────────────────────────────────────────────
+  function setDuration(mins) {
+    durationSecs = mins * 60;
+    document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById('customMins').value = '';
+    document.getElementById('customSecs').value = '';
+    if (!timerInterval && !activeId) {
+      remaining = durationSecs;
+      updateTimerDisplay();
+    }
+  }
+
+  function setCustomDuration() {
+    const mins = parseInt(document.getElementById('customMins').value) || 0;
+    const secs = parseInt(document.getElementById('customSecs').value) || 0;
+    const total = mins * 60 + secs;
+    if (total <= 0) return;
+    durationSecs = total;
+    document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+    if (!timerInterval && !activeId) {
+      remaining = durationSecs;
+      updateTimerDisplay();
+    }
+  }
+
+  // ── Add Speaker ────────────────────────────────────────────────────
+  function addSpeaker() {
+    const nameInput = document.getElementById('nameInput');
+    const topicInput = document.getElementById('topicInput');
+    const name = nameInput.value.trim();
+    if (!name) return;
+    const topic = topicInput.value.trim();
+    speakers.push({ id: nextId++, name, topic, status: 'waiting' });
+    nameInput.value = '';
+    topicInput.value = '';
+    saveState();
+    render();
+    nameInput.focus();
+  }
+
+  // ── Remove Speaker ─────────────────────────────────────────────────
+  function removeSpeaker(id) {
+    if (activeId === id) {
+      stopTimer();
+      activeId = null;
+      isPaused = false;
+    }
+    speakers = speakers.filter(s => s.id !== id);
+    saveState();
+    render();
+  }
+
+  // ── Move Up/Down ───────────────────────────────────────────────────
+  function moveUp(id) {
+    const waiting = speakers.filter(s => s.status === 'waiting');
+    const idx = waiting.findIndex(s => s.id === id);
+    if (idx <= 0) return;
+    const globalIdx = speakers.findIndex(s => s.id === id);
+    const prevWaiting = waiting[idx - 1];
+    const prevGlobalIdx = speakers.findIndex(s => s.id === prevWaiting.id);
+    [speakers[globalIdx], speakers[prevGlobalIdx]] = [speakers[prevGlobalIdx], speakers[globalIdx]];
+    saveState();
+    render();
+  }
+
+  function moveDown(id) {
+    const waiting = speakers.filter(s => s.status === 'waiting');
+    const idx = waiting.findIndex(s => s.id === id);
+    if (idx >= waiting.length - 1) return;
+    const globalIdx = speakers.findIndex(s => s.id === id);
+    const nextWaiting = waiting[idx + 1];
+    const nextGlobalIdx = speakers.findIndex(s => s.id === nextWaiting.id);
+    [speakers[globalIdx], speakers[nextGlobalIdx]] = [speakers[nextGlobalIdx], speakers[globalIdx]];
+    saveState();
+    render();
+  }
+
+  // ── Activate Speaker ───────────────────────────────────────────────
+  function activateSpeaker(id) {
+    if (timerInterval) stopTimer();
+    if (activeId && activeId !== id) {
+      const prev = speakers.find(s => s.id === activeId);
+      if (prev && prev.status === 'active') prev.status = 'waiting';
+    }
+    activeId = id;
+    const sp = speakers.find(s => s.id === id);
+    if (sp) sp.status = 'active';
+    remaining = durationSecs;
+    isPaused = false;
+    saveState();
+    render();
+    updateTimerControls(true);
+    updateTimerDisplay();
+    document.getElementById('timerName').textContent = sp ? sp.name : '';
+    document.getElementById('timerName').classList.remove('empty');
+    startTimer();
+  }
+
+  // ── Timer ──────────────────────────────────────────────────────────
+  function startTimer() {
+    if (!activeId) return;
+    if (timerInterval) return;
+    isPaused = false;
+    timerInterval = setInterval(() => {
+      remaining--;
+      updateTimerDisplay();
+      if (remaining <= 0) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+        markDone();
+      }
+    }, 1000);
+    document.getElementById('btnStart').disabled = true;
+    document.getElementById('btnPause').disabled = false;
+  }
+
+  function pauseTimer() {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+      isPaused = true;
+      document.getElementById('btnStart').disabled = false;
+      document.getElementById('btnPause').disabled = true;
+      document.getElementById('btnStart').textContent = 'Resume';
+    }
+  }
+
+  function resetTimer() {
+    stopTimer();
+    remaining = durationSecs;
+    isPaused = false;
+    document.getElementById('btnStart').disabled = false;
+    document.getElementById('btnStart').textContent = 'Start';
+    document.getElementById('btnPause').disabled = true;
+    updateTimerDisplay();
+  }
+
+  function stopTimer() {
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  }
+
+  function markDone() {
+    stopTimer();
+    if (!activeId) return;
+    const sp = speakers.find(s => s.id === activeId);
+    if (sp) {
+      sp.status = 'done';
+      speakers = speakers.filter(s => s.id !== activeId).concat(sp);
+    }
+    activeId = null;
+    isPaused = false;
+    remaining = durationSecs;
+    document.getElementById('timerName').textContent = 'No speaker active';
+    document.getElementById('timerName').classList.add('empty');
+    document.getElementById('timerDisplay').textContent = '—:——';
+    document.getElementById('timerDisplay').className = 'timer-display';
+    document.getElementById('timerBar').style.width = '100%';
+    document.getElementById('timerBar').className = 'timer-bar';
+    updateTimerControls(false);
+    saveState();
+    render();
+  }
+
+  function updateTimerDisplay() {
+    const m = Math.floor(remaining / 60);
+    const s = remaining % 60;
+    const display = document.getElementById('timerDisplay');
+    const bar = document.getElementById('timerBar');
+    const pct = (remaining / durationSecs) * 100;
+    display.textContent = `${m}:${String(s).padStart(2, '0')}`;
+
+    const warn   = remaining <= 60 && remaining > 20;
+    const danger = remaining <= 20;
+    display.className = 'timer-display' + (danger ? ' danger' : warn ? ' warning' : '');
+    bar.className     = 'timer-bar'     + (danger ? ' danger' : warn ? ' warning' : '');
+    bar.style.width   = pct + '%';
+  }
+
+  function updateTimerControls(active) {
+    document.getElementById('btnStart').disabled = !active;
+    document.getElementById('btnStart').textContent = 'Start';
+    document.getElementById('btnPause').disabled = true;
+    document.getElementById('btnReset').disabled = !active;
+    document.getElementById('btnDone').disabled = !active;
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────
+  function render() {
+    const list = document.getElementById('speakerList');
+
+    const waiting = speakers.filter(s => s.status === 'waiting');
+    const active  = speakers.filter(s => s.status === 'active');
+    const done    = speakers.filter(s => s.status === 'done');
+    const ordered = [...active, ...waiting, ...done];
+
+    // Stats
+    document.getElementById('statWaiting').textContent = waiting.length;
+    document.getElementById('statActive').textContent  = active.length ? active[0].name.split(' ')[0] : '—';
+    document.getElementById('statDone').textContent    = done.length;
+    document.getElementById('headerCount').textContent =
+      speakers.length === 1 ? '1 speaker' : `${speakers.length} speakers`;
+
+    // Queue status
+    const qs = document.getElementById('queueStatus');
+    if (waiting.length > 0) {
+      qs.textContent = `Next: ${waiting[0].name}`;
+    } else if (done.length === speakers.length && speakers.length > 0) {
+      qs.textContent = 'All speakers done';
+    } else {
+      qs.textContent = '—';
+    }
+
+    if (ordered.length === 0) {
+      list.innerHTML = '';
+      list.appendChild(createEmptyState());
+      return;
+    }
+
+    const existingEmpty = list.querySelector('.empty-state');
+    if (existingEmpty) existingEmpty.remove();
+
+    const newIds = new Set(ordered.map(s => s.id));
+    list.querySelectorAll('[data-id]').forEach(el => {
+      if (!newIds.has(+el.dataset.id)) el.remove();
+    });
+
+    ordered.forEach((sp, i) => {
+      const existing = list.querySelector(`[data-id="${sp.id}"]`);
+      const el = existing || createRow(sp);
+      updateRow(el, sp, i, waiting, active, done);
+      if (!existing) list.appendChild(el);
+      if (list.children[i] !== el) list.insertBefore(el, list.children[i] || null);
+    });
+  }
+
+  function createEmptyState() {
+    const li = document.createElement('li');
+    li.className = 'empty-state';
+    li.innerHTML = '<div class="empty-text">No speakers in queue.</div>';
+    return li;
+  }
+
+  function createRow(sp) {
+    const li = document.createElement('li');
+    li.className = 'speaker-row';
+    li.dataset.id = sp.id;
+    return li;
+  }
+
+  function updateRow(el, sp, i, waiting, active, done) {
+    el.className = 'speaker-row' +
+      (sp.status === 'active' ? ' is-active' : '') +
+      (sp.status === 'done'   ? ' is-done'   : '');
+
+    const waitingIdx = waiting.findIndex(w => w.id === sp.id);
+    const isFirst = waitingIdx === 0;
+    const isLast  = waitingIdx === waiting.length - 1;
+
+    let tag = '';
+    if (sp.status === 'active')      tag = '<span class="row-tag"><span class="live-dot"></span>Speaking</span>';
+    else if (sp.status === 'done')   tag = '<span class="row-tag tag-done">✓ Done</span>';
+    else if (waitingIdx === 0)       tag = '<span class="row-tag">Up Next</span>';
+    else                             tag = '<span class="row-tag"></span>';
+
+    let actions = '';
+    if (sp.status === 'waiting') {
+      actions = `
+        <div class="row-actions">
+          ${!isFirst ? `<button class="btn-icon" title="Move up" onclick="moveUp(${sp.id})">↑</button>` : '<span style="width:28px"></span>'}
+          ${!isLast  ? `<button class="btn-icon" title="Move down" onclick="moveDown(${sp.id})">↓</button>` : '<span style="width:28px"></span>'}
+          <button class="btn-start" onclick="activateSpeaker(${sp.id})">▶ Start</button>
+          <button class="btn-icon" title="Remove" onclick="removeSpeaker(${sp.id})">✕</button>
+        </div>`;
+    } else {
+      actions = `<div class="row-actions"><button class="btn-icon" title="Remove" onclick="removeSpeaker(${sp.id})">✕</button></div>`;
+    }
+
+    const displayNum = sp.status === 'waiting' ? waitingIdx + 1 : (sp.status === 'active' ? '▶' : '✓');
+
+    el.innerHTML = `
+      <div class="row-num">${displayNum}</div>
+      <div class="row-name">
+        ${escHtml(sp.name)}
+        ${sp.topic ? `<span class="row-topic">${escHtml(sp.topic)}</span>` : ''}
+      </div>
+      ${tag}
+      ${actions}
+    `;
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Persistence ────────────────────────────────────────────────────
+  function saveState() {
+    localStorage.setItem('sq_speakers', JSON.stringify(speakers));
+    localStorage.setItem('sq_nextId', nextId);
+  }
+
+  function loadState() {
+    try {
+      const saved = localStorage.getItem('sq_speakers');
+      if (saved) {
+        speakers = JSON.parse(saved);
+        // Reset any active speaker to waiting on reload (timer won't resume)
+        speakers.forEach(s => { if (s.status === 'active') s.status = 'waiting'; });
+        nextId = parseInt(localStorage.getItem('sq_nextId')) || speakers.length + 1;
+      }
+    } catch(e) {}
+  }
+
+  // ── Init ───────────────────────────────────────────────────────────
+  if (new URLSearchParams(location.search).has('clear')) {
+    localStorage.removeItem('sq_speakers');
+    localStorage.removeItem('sq_nextId');
+    history.replaceState(null, '', location.pathname);
+  }
+  loadState();
+  render();
+</script>
+</body>
+</html>
