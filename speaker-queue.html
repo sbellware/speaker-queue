@@ -306,10 +306,10 @@
 
   /* Right control panel */
   .control-panel {
-    padding: 5px;
+    padding: 10px;
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 10px;
     background: var(--paper);
   }
 
@@ -900,7 +900,7 @@
         <div class="row-actions">
           ${!isFirst ? `<button class="btn-icon" title="Move up" onclick="moveUp(${sp.id})">↑</button>` : '<span style="width:28px"></span>'}
           ${!isLast  ? `<button class="btn-icon" title="Move down" onclick="moveDown(${sp.id})">↓</button>` : '<span style="width:28px"></span>'}
-          <button class="btn-start" onclick="activateSpeaker(${sp.id})">▶ Start</button>
+          ${isFirst ? `<button class="btn-start" onclick="activateSpeaker(${sp.id})">▶ Start</button>` : '<span style="width:60px"></span>'}
           <button class="btn-icon" title="Remove" onclick="removeSpeaker(${sp.id})">✕</button>
         </div>`;
     } else {
