@@ -107,12 +107,6 @@
     text-align: center;
   }
 
-  .timer-name.empty {
-    color: var(--muted);
-    font-style: italic;
-    font-weight: 400;
-    font-size: 1.2rem;
-  }
 
   .timer-display {
     font-family: 'DM Mono', monospace;
@@ -254,7 +248,7 @@
     white-space: nowrap;
   }
 
-  .is-active .row-tag { color: #888; }
+  .is-active .row-tag { color: var(--active-fg); }
 
   .tag-done {
     color: var(--green) !important;
@@ -306,10 +300,10 @@
 
   /* Right control panel */
   .control-panel {
-    padding: 10px;
+    padding: 5px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 5px;
     background: var(--paper);
   }
 
@@ -801,8 +795,8 @@
     const pct = (remaining / durationSecs) * 100;
     display.textContent = `${m}:${String(s).padStart(2, '0')}`;
 
-    const warn   = remaining <= 60 && remaining > 20;
-    const danger = remaining <= 20;
+    const warn   = remaining <= 30 && remaining > 10;
+    const danger = remaining <= 10;
     display.className = 'timer-display' + (danger ? ' danger' : warn ? ' warning' : '');
     bar.className     = 'timer-bar'     + (danger ? ' danger' : warn ? ' warning' : '');
     bar.style.width   = pct + '%';
