@@ -68,6 +68,17 @@
     gap: 16px;
   }
 
+  .conn-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #c8bfa8;
+    display: inline-block;
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+
+  .conn-dot.connected { background: var(--green); }
+
   .speaker-count {
     font-family: 'DM Mono', monospace;
     font-size: 0.75rem;
@@ -529,6 +540,7 @@
   <h1>Speaker Queue</h1>
   <span class="subtitle">© 2026 Scott Bellware. All rights reserved.</span>
   <div class="header-right">
+    <span class="conn-dot" id="connDot" title="Reconnecting…"></span>
     <span class="speaker-count" id="headerCount">0 speakers</span>
   </div>
 </header>
@@ -586,8 +598,8 @@
     <div class="duration-block">
       <div class="section-label">Speaking Duration</div>
       <div class="duration-pills">
-        <button class="pill active" onclick="setDuration(2)">2 min</button>
-        <button class="pill" onclick="setDuration(3)">3 min</button>
+        <button class="pill active" data-secs="120" onclick="setDuration(120)">2 min</button>
+        <button class="pill" data-secs="180" onclick="setDuration(180)">3 min</button>
       </div>
       <div class="custom-duration-row">
         <input class="custom-duration-input" type="number" id="customMins" placeholder="m" min="0" max="99"
@@ -615,26 +627,141 @@
 </div>
 
 <script>
-  // ── State ──────────────────────────────────────────────────────────
-  let speakers = [];       // { id, name, status: 'waiting'|'active'|'done' }
-  let nextId = 1;
-  let durationSecs = 120;  // default 2 min
-  let remaining = durationSecs;
-  let timerInterval = null;
-  let activeId = null;
-  let isPaused = false;
+  // ── Local state (mirrors server) ───────────────────────────────────
+  let speakers = [];
+  let durationSecs = 120;
+  let timerState = { activeId: null, startedAt: null, pausedRemaining: 120, isPaused: false };
+  let localTickInterval = null;
 
-  // ── Duration ───────────────────────────────────────────────────────
-  function setDuration(mins) {
-    durationSecs = mins * 60;
-    document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
-    event.target.classList.add('active');
+  // ── WebSocket ──────────────────────────────────────────────────────
+  let ws = null;
+  let reconnectTimer = null;
+
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${proto}//${location.host}`);
+
+    ws.onopen = () => {
+      clearTimeout(reconnectTimer);
+      setConnected(true);
+    };
+
+    ws.onmessage = evt => {
+      let msg;
+      try { msg = JSON.parse(evt.data); } catch { return; }
+      if (msg.type === 'STATE') applyState(msg);
+    };
+
+    ws.onclose = () => {
+      ws = null;
+      setConnected(false);
+      reconnectTimer = setTimeout(connect, 2000);
+    };
+
+    ws.onerror = () => { ws && ws.close(); };
+  }
+
+  function send(msg) {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+  }
+
+  function setConnected(ok) {
+    const dot = document.getElementById('connDot');
+    dot.className = 'conn-dot' + (ok ? ' connected' : '');
+    dot.title = ok ? 'Connected' : 'Reconnecting…';
+  }
+
+  // ── Apply server state ─────────────────────────────────────────────
+  function applyState(msg) {
+    speakers = msg.speakers;
+    durationSecs = msg.durationSecs;
+    timerState = msg.timer;
+
+    const isRunning = !!(timerState.activeId && !timerState.isPaused);
+    if (isRunning && !localTickInterval) startLocalTick();
+    else if (!isRunning && localTickInterval) stopLocalTick();
+
+    render();
+    updateTimerFromState();
+    updateDurationPills();
+  }
+
+  // ── Timer display (client-side smooth tick) ────────────────────────
+  function computeRemaining() {
+    if (!timerState.activeId) return durationSecs;
+    if (timerState.isPaused) return timerState.pausedRemaining;
+    return Math.max(0, timerState.pausedRemaining - Math.floor((Date.now() - timerState.startedAt) / 1000));
+  }
+
+  function startLocalTick() {
+    stopLocalTick();
+    localTickInterval = setInterval(() => {
+      if (!timerState.activeId || timerState.isPaused) { stopLocalTick(); return; }
+      updateTimerDisplay(computeRemaining());
+    }, 250);
+  }
+
+  function stopLocalTick() {
+    if (localTickInterval) { clearInterval(localTickInterval); localTickInterval = null; }
+  }
+
+  function updateTimerFromState() {
+    const { activeId, isPaused } = timerState;
+    const nameEl = document.getElementById('timerName');
+
+    if (!activeId) {
+      nameEl.textContent = 'No speaker active';
+      nameEl.className = 'timer-name empty';
+      const m = Math.floor(durationSecs / 60), s = durationSecs % 60;
+      document.getElementById('timerDisplay').textContent = `${m}:${String(s).padStart(2, '0')}`;
+      document.getElementById('timerDisplay').className = 'timer-display';
+      document.getElementById('timerBar').style.width = '100%';
+      document.getElementById('timerBar').className = 'timer-bar';
+      updateTimerControls(false, false);
+    } else {
+      const sp = speakers.find(s => s.id === activeId);
+      nameEl.textContent = sp ? sp.name : '';
+      nameEl.className = 'timer-name';
+      updateTimerDisplay(computeRemaining());
+      updateTimerControls(true, isPaused);
+    }
+  }
+
+  function updateTimerDisplay(remaining) {
+    const m = Math.floor(remaining / 60), s = remaining % 60;
+    const display = document.getElementById('timerDisplay');
+    const bar = document.getElementById('timerBar');
+    const pct = Math.max(0, (remaining / durationSecs) * 100);
+    display.textContent = `${m}:${String(s).padStart(2, '0')}`;
+    const warn = remaining <= 30 && remaining > 10;
+    const danger = remaining <= 10;
+    display.className = 'timer-display' + (danger ? ' danger' : warn ? ' warning' : '');
+    bar.className     = 'timer-bar'     + (danger ? ' danger' : warn ? ' warning' : '');
+    bar.style.width   = pct + '%';
+  }
+
+  function updateTimerControls(active, isPaused) {
+    const btnStart = document.getElementById('btnStart');
+    const isRunning = active && !isPaused;
+    const isPausedState = active && isPaused;
+    btnStart.textContent = isPausedState ? 'Resume' : 'Start';
+    btnStart.disabled = !isPausedState;
+    document.getElementById('btnPause').disabled = !isRunning;
+    document.getElementById('btnReset').disabled = !active;
+    document.getElementById('btnDone').disabled = !active;
+  }
+
+  function updateDurationPills() {
+    document.querySelectorAll('.pill[data-secs]').forEach(p => {
+      p.classList.toggle('active', +p.dataset.secs === durationSecs);
+    });
+  }
+
+  // ── Actions → server ───────────────────────────────────────────────
+  function setDuration(secs) {
     document.getElementById('customMins').value = '';
     document.getElementById('customSecs').value = '';
-    if (!timerInterval && !activeId) {
-      remaining = durationSecs;
-      updateTimerDisplay();
-    }
+    send({ type: 'SET_DURATION', secs });
   }
 
   function setCustomDuration() {
@@ -642,174 +769,28 @@
     const secs = parseInt(document.getElementById('customSecs').value) || 0;
     const total = mins * 60 + secs;
     if (total <= 0) return;
-    durationSecs = total;
-    document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
-    if (!timerInterval && !activeId) {
-      remaining = durationSecs;
-      updateTimerDisplay();
-    }
+    send({ type: 'SET_DURATION', secs: total });
   }
 
-  // ── Add Speaker ────────────────────────────────────────────────────
   function addSpeaker() {
     const nameInput = document.getElementById('nameInput');
     const topicInput = document.getElementById('topicInput');
     const name = nameInput.value.trim();
     if (!name) return;
-    const topic = topicInput.value.trim();
-    speakers.push({ id: nextId++, name, topic, status: 'waiting' });
+    send({ type: 'ADD_SPEAKER', name, topic: topicInput.value.trim() });
     nameInput.value = '';
     topicInput.value = '';
-    saveState();
-    render();
     nameInput.focus();
   }
 
-  // ── Remove Speaker ─────────────────────────────────────────────────
-  function removeSpeaker(id) {
-    if (activeId === id) {
-      stopTimer();
-      activeId = null;
-      isPaused = false;
-    }
-    speakers = speakers.filter(s => s.id !== id);
-    saveState();
-    render();
-  }
-
-  // ── Move Up/Down ───────────────────────────────────────────────────
-  function moveUp(id) {
-    const waiting = speakers.filter(s => s.status === 'waiting');
-    const idx = waiting.findIndex(s => s.id === id);
-    if (idx <= 0) return;
-    const globalIdx = speakers.findIndex(s => s.id === id);
-    const prevWaiting = waiting[idx - 1];
-    const prevGlobalIdx = speakers.findIndex(s => s.id === prevWaiting.id);
-    [speakers[globalIdx], speakers[prevGlobalIdx]] = [speakers[prevGlobalIdx], speakers[globalIdx]];
-    saveState();
-    render();
-  }
-
-  function moveDown(id) {
-    const waiting = speakers.filter(s => s.status === 'waiting');
-    const idx = waiting.findIndex(s => s.id === id);
-    if (idx >= waiting.length - 1) return;
-    const globalIdx = speakers.findIndex(s => s.id === id);
-    const nextWaiting = waiting[idx + 1];
-    const nextGlobalIdx = speakers.findIndex(s => s.id === nextWaiting.id);
-    [speakers[globalIdx], speakers[nextGlobalIdx]] = [speakers[nextGlobalIdx], speakers[globalIdx]];
-    saveState();
-    render();
-  }
-
-  // ── Activate Speaker ───────────────────────────────────────────────
-  function activateSpeaker(id) {
-    if (timerInterval) stopTimer();
-    if (activeId && activeId !== id) {
-      const prev = speakers.find(s => s.id === activeId);
-      if (prev && prev.status === 'active') prev.status = 'waiting';
-    }
-    activeId = id;
-    const sp = speakers.find(s => s.id === id);
-    if (sp) sp.status = 'active';
-    remaining = durationSecs;
-    isPaused = false;
-    saveState();
-    render();
-    updateTimerControls(true);
-    updateTimerDisplay();
-    document.getElementById('timerName').textContent = sp ? sp.name : '';
-    document.getElementById('timerName').classList.remove('empty');
-    startTimer();
-  }
-
-  // ── Timer ──────────────────────────────────────────────────────────
-  function startTimer() {
-    if (!activeId) return;
-    if (timerInterval) return;
-    isPaused = false;
-    timerInterval = setInterval(() => {
-      remaining--;
-      updateTimerDisplay();
-      if (remaining <= 0) {
-        clearInterval(timerInterval);
-        timerInterval = null;
-        markDone();
-      }
-    }, 1000);
-    document.getElementById('btnStart').disabled = true;
-    document.getElementById('btnPause').disabled = false;
-  }
-
-  function pauseTimer() {
-    if (timerInterval) {
-      clearInterval(timerInterval);
-      timerInterval = null;
-      isPaused = true;
-      document.getElementById('btnStart').disabled = false;
-      document.getElementById('btnPause').disabled = true;
-      document.getElementById('btnStart').textContent = 'Resume';
-    }
-  }
-
-  function resetTimer() {
-    stopTimer();
-    remaining = durationSecs;
-    isPaused = false;
-    document.getElementById('btnStart').disabled = false;
-    document.getElementById('btnStart').textContent = 'Start';
-    document.getElementById('btnPause').disabled = true;
-    updateTimerDisplay();
-  }
-
-  function stopTimer() {
-    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-  }
-
-  function markDone() {
-    stopTimer();
-    if (!activeId) return;
-    const sp = speakers.find(s => s.id === activeId);
-    if (sp) {
-      sp.status = 'done';
-      speakers = speakers.filter(s => s.id !== activeId).concat(sp);
-    }
-    activeId = null;
-    isPaused = false;
-    remaining = durationSecs;
-    document.getElementById('timerName').textContent = 'No speaker active';
-    document.getElementById('timerName').classList.add('empty');
-    document.getElementById('timerDisplay').textContent = '—:——';
-    document.getElementById('timerDisplay').className = 'timer-display';
-    document.getElementById('timerBar').style.width = '100%';
-    document.getElementById('timerBar').className = 'timer-bar';
-    updateTimerControls(false);
-    saveState();
-    render();
-  }
-
-  function updateTimerDisplay() {
-    const m = Math.floor(remaining / 60);
-    const s = remaining % 60;
-    const display = document.getElementById('timerDisplay');
-    const bar = document.getElementById('timerBar');
-    const pct = (remaining / durationSecs) * 100;
-    display.textContent = `${m}:${String(s).padStart(2, '0')}`;
-
-    const warn   = remaining <= 30 && remaining > 10;
-    const danger = remaining <= 10;
-    display.className = 'timer-display' + (danger ? ' danger' : warn ? ' warning' : '');
-    bar.className     = 'timer-bar'     + (danger ? ' danger' : warn ? ' warning' : '');
-    bar.style.width   = pct + '%';
-  }
-
-  function updateTimerControls(active) {
-    document.getElementById('btnStart').disabled = !active;
-    document.getElementById('btnStart').textContent = 'Start';
-    document.getElementById('btnPause').disabled = true;
-    document.getElementById('btnReset').disabled = !active;
-    document.getElementById('btnDone').disabled = !active;
-  }
+  function removeSpeaker(id) { send({ type: 'REMOVE_SPEAKER', id }); }
+  function moveUp(id)        { send({ type: 'MOVE_UP', id }); }
+  function moveDown(id)      { send({ type: 'MOVE_DOWN', id }); }
+  function activateSpeaker(id) { send({ type: 'ACTIVATE_SPEAKER', id }); }
+  function startTimer()      { send({ type: 'RESUME_TIMER' }); }
+  function pauseTimer()      { send({ type: 'PAUSE_TIMER' }); }
+  function resetTimer()      { send({ type: 'RESET_TIMER' }); }
+  function markDone()        { send({ type: 'MARK_DONE' }); }
 
   // ── Render ─────────────────────────────────────────────────────────
   function render() {
@@ -820,14 +801,12 @@
     const done    = speakers.filter(s => s.status === 'done');
     const ordered = [...active, ...waiting, ...done];
 
-    // Stats
     document.getElementById('statWaiting').textContent = waiting.length;
     document.getElementById('statActive').textContent  = active.length ? active[0].name.split(' ')[0] : '—';
     document.getElementById('statDone').textContent    = done.length;
     document.getElementById('headerCount').textContent =
       speakers.length === 1 ? '1 speaker' : `${speakers.length} speakers`;
 
-    // Queue status
     const qs = document.getElementById('queueStatus');
     if (waiting.length > 0) {
       qs.textContent = `Next: ${waiting[0].name}`;
@@ -884,10 +863,10 @@
     const isLast  = waitingIdx === waiting.length - 1;
 
     let tag = '';
-    if (sp.status === 'active')      tag = '<span class="row-tag"><span class="live-dot"></span>Speaking</span>';
-    else if (sp.status === 'done')   tag = '<span class="row-tag tag-done">✓ Done</span>';
-    else if (waitingIdx === 0)       tag = '<span class="row-tag">Up Next</span>';
-    else                             tag = '<span class="row-tag"></span>';
+    if (sp.status === 'active')    tag = '<span class="row-tag"><span class="live-dot"></span>Speaking</span>';
+    else if (sp.status === 'done') tag = '<span class="row-tag tag-done">✓ Done</span>';
+    else if (waitingIdx === 0)     tag = '<span class="row-tag">Up Next</span>';
+    else                           tag = '<span class="row-tag"></span>';
 
     let actions = '';
     if (sp.status === 'waiting') {
@@ -919,32 +898,8 @@
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  // ── Persistence ────────────────────────────────────────────────────
-  function saveState() {
-    localStorage.setItem('sq_speakers', JSON.stringify(speakers));
-    localStorage.setItem('sq_nextId', nextId);
-  }
-
-  function loadState() {
-    try {
-      const saved = localStorage.getItem('sq_speakers');
-      if (saved) {
-        speakers = JSON.parse(saved);
-        // Reset any active speaker to waiting on reload (timer won't resume)
-        speakers.forEach(s => { if (s.status === 'active') s.status = 'waiting'; });
-        nextId = parseInt(localStorage.getItem('sq_nextId')) || speakers.length + 1;
-      }
-    } catch(e) {}
-  }
-
   // ── Init ───────────────────────────────────────────────────────────
-  if (new URLSearchParams(location.search).has('clear')) {
-    localStorage.removeItem('sq_speakers');
-    localStorage.removeItem('sq_nextId');
-    history.replaceState(null, '', location.pathname);
-  }
-  loadState();
-  render();
+  connect();
 </script>
 </body>
 </html>

@@ -1,0 +1,30 @@
+{
+  "speakers": [
+    {
+      "id": 1,
+      "name": "Foo Bar",
+      "topic": "Baz",
+      "status": "done"
+    },
+    {
+      "id": 2,
+      "name": "Boo Boo",
+      "topic": "Blah",
+      "status": "done"
+    },
+    {
+      "id": 3,
+      "name": "asdadsadsa",
+      "topic": "",
+      "status": "done"
+    }
+  ],
+  "nextId": 4,
+  "durationSecs": 5,
+  "timer": {
+    "activeId": null,
+    "startedAt": null,
+    "pausedRemaining": 5,
+    "isPaused": true
+  }
+}
