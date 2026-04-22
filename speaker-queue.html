@@ -942,6 +942,16 @@
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  // ── Keyboard shortcuts ─────────────────────────────────────────────
+  document.addEventListener('keydown', e => {
+    if (e.code !== 'Space') return;
+    if (['INPUT', 'TEXTAREA', 'BUTTON'].includes(e.target.tagName)) return;
+    if (timerState.phase === 'followup' && timerState.isPaused) {
+      e.preventDefault();
+      startTimer();
+    }
+  });
+
   // ── Init ───────────────────────────────────────────────────────────
   connect();
 </script>
