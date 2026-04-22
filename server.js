@@ -216,6 +216,13 @@ const server = http.createServer((req, res) => {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(data);
     });
+  } else if (req.method === 'GET' && req.url === '/clear') {
+    clearScheduledDone();
+    state = defaultState();
+    try { fs.unlinkSync(STATE_FILE); } catch {}
+    broadcast();
+    res.writeHead(302, { Location: '/' });
+    res.end();
   } else {
     res.writeHead(404); res.end('Not found');
   }
