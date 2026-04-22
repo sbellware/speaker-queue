@@ -946,10 +946,10 @@
   document.addEventListener('keydown', e => {
     if (e.code !== 'Space') return;
     if (['INPUT', 'TEXTAREA', 'BUTTON'].includes(e.target.tagName)) return;
-    if (timerState.phase === 'followup' && timerState.isPaused) {
-      e.preventDefault();
-      startTimer();
-    }
+    if (!timerState.activeId) return;
+    e.preventDefault();
+    if (timerState.isPaused) startTimer();
+    else pauseTimer();
   });
 
   // ── Init ───────────────────────────────────────────────────────────
