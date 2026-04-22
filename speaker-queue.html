@@ -563,6 +563,7 @@
     <button class="btn" id="btnPause" disabled onclick="pauseTimer()">Pause</button>
     <button class="btn" id="btnReset" disabled onclick="resetTimer()">Reset</button>
     <button class="btn" id="btnDone" disabled onclick="markDone()">Done</button>
+    <button class="btn" id="btnFollowUp" style="display:none" onclick="proceedToFollowUp()">Follow-up</button>
   </div>
   <div class="timer-bar-wrap">
     <div class="timer-bar" id="timerBar" style="width:100%"></div>
@@ -782,6 +783,10 @@
     document.getElementById('btnPause').disabled = !isRunning;
     document.getElementById('btnReset').disabled = !active;
     document.getElementById('btnDone').disabled = !active;
+    const btnFollowUp = document.getElementById('btnFollowUp');
+    const showFollowUp = followUpSecs > 0 && active && timerState.phase === 'question';
+    btnFollowUp.style.display = showFollowUp ? '' : 'none';
+    btnFollowUp.disabled = !active;
   }
 
   function updateDurationPills() {
@@ -833,7 +838,8 @@
   function startTimer()      { send({ type: 'RESUME_TIMER' }); }
   function pauseTimer()      { send({ type: 'PAUSE_TIMER' }); }
   function resetTimer()      { send({ type: 'RESET_TIMER' }); }
-  function markDone()        { send({ type: 'MARK_DONE' }); }
+  function markDone()          { send({ type: 'MARK_DONE' }); }
+  function proceedToFollowUp() { send({ type: 'PROCEED_TO_FOLLOWUP' }); }
 
   // ── Render ─────────────────────────────────────────────────────────
   function render() {
@@ -946,10 +952,10 @@
   document.addEventListener('keydown', e => {
     if (e.code !== 'Space') return;
     if (['INPUT', 'TEXTAREA', 'BUTTON'].includes(e.target.tagName)) return;
-    if (timerState.phase === 'followup' && timerState.isPaused) {
-      e.preventDefault();
-      startTimer();
-    }
+    if (!timerState.activeId) return;
+    e.preventDefault();
+    if (timerState.isPaused) startTimer();
+    else pauseTimer();
   });
 
   // ── Init ───────────────────────────────────────────────────────────
