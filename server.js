@@ -200,6 +200,16 @@ function doSetDuration(secs) {
   saveState();
 }
 
+function doProceedToFollowUp() {
+  if (!state.timer.activeId || state.timer.phase !== 'question' || state.followUpSecs <= 0) return;
+  clearScheduledDone();
+  state.timer.phase = 'followup';
+  state.timer.pausedRemaining = state.followUpSecs;
+  state.timer.isPaused = true;
+  state.timer.startedAt = null;
+  saveState();
+}
+
 function doSetFollowUpDuration(secs) {
   secs = parseInt(secs) || 0;
   if (secs < 0) return;
@@ -268,7 +278,8 @@ wss.on('connection', ws => {
       case 'RESET_TIMER':      doReset(); break;
       case 'MARK_DONE':        doMarkDone(); break;
       case 'SET_DURATION':          doSetDuration(msg.secs); break;
-      case 'SET_FOLLOWUP_DURATION': doSetFollowUpDuration(msg.secs); break;
+      case 'SET_FOLLOWUP_DURATION':  doSetFollowUpDuration(msg.secs); break;
+      case 'PROCEED_TO_FOLLOWUP':    doProceedToFollowUp(); break;
       default: return;
     }
     broadcast();
