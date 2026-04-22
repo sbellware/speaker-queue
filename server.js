@@ -16,7 +16,8 @@ function defaultState() {
     speakers: [],
     nextId: 1,
     durationSecs: 120,
-    timer: { activeId: null, startedAt: null, pausedRemaining: 120, isPaused: false }
+    followUpSecs: 0,
+    timer: { activeId: null, startedAt: null, pausedRemaining: 120, isPaused: false, phase: 'question' }
   };
 }
 
@@ -44,11 +45,13 @@ function saveState() {
     speakers: state.speakers,
     nextId: state.nextId,
     durationSecs: state.durationSecs,
+    followUpSecs: state.followUpSecs,
     timer: {
       activeId: state.timer.activeId,
       startedAt: null,
       pausedRemaining: computeRemaining(),
-      isPaused: true
+      isPaused: true,
+      phase: state.timer.phase
     }
   };
   try { fs.writeFileSync(STATE_FILE, JSON.stringify(snap, null, 2)); }
@@ -68,7 +71,15 @@ function scheduleDone() {
   clearScheduledDone();
   if (!state.timer.activeId || state.timer.isPaused) return;
   doneTimeout = setTimeout(() => {
-    doMarkDone();
+    if (state.timer.phase === 'question' && state.followUpSecs > 0) {
+      state.timer.phase = 'followup';
+      state.timer.pausedRemaining = state.followUpSecs;
+      state.timer.isPaused = true;
+      state.timer.startedAt = null;
+      saveState();
+    } else {
+      doMarkDone();
+    }
     broadcast();
   }, computeRemaining() * 1000);
 }
@@ -130,6 +141,7 @@ function doActivate(id) {
   state.timer.activeId = id;
   const sp = state.speakers.find(s => s.id === id);
   if (sp) sp.status = 'active';
+  state.timer.phase = 'question';
   state.timer.pausedRemaining = state.durationSecs;
   state.timer.isPaused = false;
   state.timer.startedAt = Date.now();
@@ -157,7 +169,7 @@ function doResume() {
 function doReset() {
   if (!state.timer.activeId) return;
   clearScheduledDone();
-  state.timer.pausedRemaining = state.durationSecs;
+  state.timer.pausedRemaining = state.timer.phase === 'followup' ? state.followUpSecs : state.durationSecs;
   state.timer.isPaused = true;
   state.timer.startedAt = null;
   saveState();
@@ -175,6 +187,7 @@ function doMarkDone() {
   state.timer.activeId = null;
   state.timer.isPaused = false;
   state.timer.startedAt = null;
+  state.timer.phase = 'question';
   state.timer.pausedRemaining = state.durationSecs;
   saveState();
 }
@@ -184,6 +197,13 @@ function doSetDuration(secs) {
   if (secs <= 0) return;
   state.durationSecs = secs;
   if (!state.timer.activeId) state.timer.pausedRemaining = secs;
+  saveState();
+}
+
+function doSetFollowUpDuration(secs) {
+  secs = parseInt(secs) || 0;
+  if (secs < 0) return;
+  state.followUpSecs = secs;
   saveState();
 }
 
@@ -212,6 +232,7 @@ function buildStateMsg() {
     speakers: state.speakers,
     nextId: state.nextId,
     durationSecs: state.durationSecs,
+    followUpSecs: state.followUpSecs,
     timer: { ...state.timer }
   });
 }
@@ -239,7 +260,8 @@ wss.on('connection', ws => {
       case 'RESUME_TIMER':     doResume(); break;
       case 'RESET_TIMER':      doReset(); break;
       case 'MARK_DONE':        doMarkDone(); break;
-      case 'SET_DURATION':     doSetDuration(msg.secs); break;
+      case 'SET_DURATION':          doSetDuration(msg.secs); break;
+      case 'SET_FOLLOWUP_DURATION': doSetFollowUpDuration(msg.secs); break;
       default: return;
     }
     broadcast();

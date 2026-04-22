@@ -26,7 +26,8 @@
     font-family: 'DM Sans', sans-serif;
     background: var(--paper);
     color: var(--ink);
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
   }
@@ -89,6 +90,7 @@
   /* ── Timer Hero ─────────────────────────────────────────────────── */
   .timer-hero {
     flex: 1;
+    min-height: 0;
     border-bottom: 3px double var(--ink);
     display: flex;
     flex-direction: column;
@@ -97,7 +99,6 @@
     gap: 0;
     padding: 8px 32px 6px;
     position: relative;
-    flex-shrink: 0;
     overflow: hidden;
   }
 
@@ -120,6 +121,18 @@
 
   .timer-name.empty { color: #a89e94; font-style: italic; }
 
+  .timer-phase {
+    font-family: 'DM Mono', monospace;
+    font-size: 2.2rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+    min-height: 1.2em;
+    margin-bottom: 2px;
+  }
+
+  .timer-phase.followup { color: var(--gold); }
+
   .timer-display {
     font-family: 'DM Mono', monospace;
     font-size: 40.5vh;
@@ -127,7 +140,7 @@
     letter-spacing: -4px;
     line-height: 1;
     transition: color 0.3s;
-    margin: 0 0 4px;
+    margin: auto 0;
   }
 
   .timer-display.warning { color: var(--gold); }
@@ -163,7 +176,8 @@
   .layout {
     display: grid;
     grid-template-columns: minmax(0, calc(90.72% - 355px)) 110px 1fr;
-    height: 40vh;
+    height: 35vh;
+    flex-shrink: 0;
     flex-shrink: 0;
     overflow: hidden;
   }
@@ -352,7 +366,7 @@
   /* Duration selector */
   .duration-block {
     border: 1px solid var(--rule);
-    padding: 16px;
+    padding: 8px 12px;
     background: var(--cream);
   }
 
@@ -362,7 +376,7 @@
     text-transform: uppercase;
     font-family: 'DM Mono', monospace;
     color: var(--muted);
-    margin-bottom: 12px;
+    margin-bottom: 6px;
   }
 
   .duration-pills {
@@ -370,13 +384,6 @@
     gap: 8px;
     flex-wrap: wrap;
     align-items: center;
-    margin-bottom: 8px;
-  }
-
-  .custom-duration-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
   }
 
   .custom-duration-input {
@@ -405,7 +412,7 @@
     margin: 0 -5px;
   }
 
-  .pill {
+  .pill, .pill-followup {
     padding: 6px 14px;
     border: 1.5px solid var(--rule);
     background: var(--paper);
@@ -418,7 +425,8 @@
     font-weight: 500;
   }
 
-  .pill:hover, .pill.active {
+  .pill:hover, .pill.active,
+  .pill-followup:hover, .pill-followup.active {
     background: var(--ink);
     color: var(--paper);
     border-color: var(--ink);
@@ -427,7 +435,7 @@
   /* Add speaker block */
   .add-block {
     border: 1px solid var(--rule);
-    padding: 16px;
+    padding: 8px 12px;
   }
 
   .add-row {
@@ -548,6 +556,7 @@
 <!-- Full-width timer hero -->
 <div class="timer-hero">
   <div class="timer-name empty" id="timerName">No speaker active</div>
+  <div class="timer-phase" id="timerPhase"></div>
   <div class="timer-display" id="timerDisplay">2:00</div>
   <div class="timer-controls">
     <button class="btn btn-primary" id="btnStart" disabled onclick="startTimer()">Start</button>
@@ -600,9 +609,7 @@
       <div class="duration-pills">
         <button class="pill" data-secs="60" onclick="setDuration(60)">1 min</button>
         <button class="pill active" data-secs="120" onclick="setDuration(120)">2 min</button>
-        <button class="pill" data-secs="180" onclick="setDuration(180)">3 min</button>
-      </div>
-      <div class="custom-duration-row">
+        <span style="width:1px;align-self:stretch;background:var(--rule);margin:0 4px"></span>
         <input class="custom-duration-input" type="number" id="customMins" placeholder="m" min="0" max="99"
                onkeydown="if(event.key==='Enter') setCustomDuration()">
         <span class="custom-duration-unit">:</span>
@@ -612,12 +619,22 @@
       </div>
     </div>
 
+    <!-- Follow-up Duration -->
+    <div class="duration-block">
+      <div class="section-label">Follow-up Duration</div>
+      <div class="duration-pills">
+        <button class="pill-followup active" data-followup="0" onclick="setFollowUpDuration(0)">Off</button>
+        <button class="pill-followup" data-followup="30" onclick="setFollowUpDuration(30)">30 sec</button>
+        <button class="pill-followup" data-followup="60" onclick="setFollowUpDuration(60)">1 min</button>
+      </div>
+    </div>
+
     <!-- Add Speaker -->
     <div class="add-block">
       <div class="section-label">Add Speaker</div>
       <div class="add-form">
         <input class="name-input" type="text" id="nameInput" placeholder="Name…" maxlength="60"
-               style="grid-area:name" onkeydown="if(event.key==='Enter') document.getElementById('topicInput').focus()">
+               style="grid-area:name" onkeydown="if(event.key==='Enter') addSpeaker()">
         <input class="name-input" type="text" id="topicInput" placeholder="Topic…" maxlength="120"
                style="grid-area:topic" onkeydown="if(event.key==='Enter') addSpeaker()">
         <button class="btn btn-primary" style="grid-area:btn" onclick="addSpeaker()">Add</button>
@@ -631,7 +648,8 @@
   // ── Local state (mirrors server) ───────────────────────────────────
   let speakers = [];
   let durationSecs = 120;
-  let timerState = { activeId: null, startedAt: null, pausedRemaining: 120, isPaused: false };
+  let followUpSecs = 0;
+  let timerState = { activeId: null, startedAt: null, pausedRemaining: 120, isPaused: false, phase: 'question' };
   let localTickInterval = null;
 
   // ── WebSocket ──────────────────────────────────────────────────────
@@ -676,6 +694,7 @@
   function applyState(msg) {
     speakers = msg.speakers;
     durationSecs = msg.durationSecs;
+    followUpSecs = msg.followUpSecs ?? 0;
     timerState = msg.timer;
 
     const isRunning = !!(timerState.activeId && !timerState.isPaused);
@@ -685,6 +704,7 @@
     render();
     updateTimerFromState();
     updateDurationPills();
+    updateFollowUpPills();
   }
 
   // ── Timer display (client-side smooth tick) ────────────────────────
@@ -707,12 +727,15 @@
   }
 
   function updateTimerFromState() {
-    const { activeId, isPaused } = timerState;
+    const { activeId, isPaused, phase } = timerState;
     const nameEl = document.getElementById('timerName');
+    const phaseEl = document.getElementById('timerPhase');
 
     if (!activeId) {
       nameEl.textContent = 'No speaker active';
       nameEl.className = 'timer-name empty';
+      phaseEl.textContent = '';
+      phaseEl.className = 'timer-phase';
       const m = Math.floor(durationSecs / 60), s = durationSecs % 60;
       document.getElementById('timerDisplay').textContent = `${m}:${String(s).padStart(2, '0')}`;
       document.getElementById('timerDisplay').className = 'timer-display';
@@ -723,6 +746,13 @@
       const sp = speakers.find(s => s.id === activeId);
       nameEl.textContent = sp ? sp.name : '';
       nameEl.className = 'timer-name';
+      if (phase === 'followup') {
+        phaseEl.textContent = 'Follow-up';
+        phaseEl.className = 'timer-phase followup';
+      } else {
+        phaseEl.textContent = followUpSecs > 0 ? 'Question' : '';
+        phaseEl.className = 'timer-phase';
+      }
       updateTimerDisplay(computeRemaining());
       updateTimerControls(true, isPaused);
     }
@@ -732,7 +762,8 @@
     const m = Math.floor(remaining / 60), s = remaining % 60;
     const display = document.getElementById('timerDisplay');
     const bar = document.getElementById('timerBar');
-    const pct = Math.max(0, (remaining / durationSecs) * 100);
+    const denominator = timerState.phase === 'followup' ? followUpSecs : durationSecs;
+    const pct = Math.max(0, denominator > 0 ? (remaining / denominator) * 100 : 100);
     display.textContent = `${m}:${String(s).padStart(2, '0')}`;
     const warn = remaining <= 30 && remaining > 10;
     const danger = remaining <= 10;
@@ -745,7 +776,8 @@
     const btnStart = document.getElementById('btnStart');
     const isRunning = active && !isPaused;
     const isPausedState = active && isPaused;
-    btnStart.textContent = isPausedState ? 'Resume' : 'Start';
+    const followupUnstarted = timerState.phase === 'followup' && timerState.pausedRemaining === followUpSecs;
+    btnStart.textContent = (isPausedState && !followupUnstarted) ? 'Resume' : 'Start';
     btnStart.disabled = !isPausedState;
     document.getElementById('btnPause').disabled = !isRunning;
     document.getElementById('btnReset').disabled = !active;
@@ -758,11 +790,21 @@
     });
   }
 
+  function updateFollowUpPills() {
+    document.querySelectorAll('.pill-followup[data-followup]').forEach(p => {
+      p.classList.toggle('active', +p.dataset.followup === followUpSecs);
+    });
+  }
+
   // ── Actions → server ───────────────────────────────────────────────
   function setDuration(secs) {
     document.getElementById('customMins').value = '';
     document.getElementById('customSecs').value = '';
     send({ type: 'SET_DURATION', secs });
+  }
+
+  function setFollowUpDuration(secs) {
+    send({ type: 'SET_FOLLOWUP_DURATION', secs });
   }
 
   function setCustomDuration() {
@@ -869,13 +911,14 @@
     else if (waitingIdx === 0)     tag = '<span class="row-tag">Up Next</span>';
     else                           tag = '<span class="row-tag"></span>';
 
+    const ghost = 'style="visibility:hidden" tabindex="-1" aria-hidden="true"';
     let actions = '';
     if (sp.status === 'waiting') {
       actions = `
         <div class="row-actions">
-          ${!isFirst ? `<button class="btn-icon" title="Move up" onclick="moveUp(${sp.id})">↑</button>` : '<span style="width:28px"></span>'}
-          ${!isLast  ? `<button class="btn-icon" title="Move down" onclick="moveDown(${sp.id})">↓</button>` : '<span style="width:28px"></span>'}
-          ${isFirst ? `<button class="btn-start" onclick="activateSpeaker(${sp.id})">▶ Start</button>` : '<span style="width:60px"></span>'}
+          ${!isFirst ? `<button class="btn-icon" title="Move up" onclick="moveUp(${sp.id})">↑</button>` : `<button class="btn-icon" ${ghost}>↑</button>`}
+          ${!isLast  ? `<button class="btn-icon" title="Move down" onclick="moveDown(${sp.id})">↓</button>` : `<button class="btn-icon" ${ghost}>↓</button>`}
+          ${isFirst ? `<button class="btn-start" onclick="activateSpeaker(${sp.id})">▶ Start</button>` : `<button class="btn-start" ${ghost}>▶ Start</button>`}
           <button class="btn-icon" title="Remove" onclick="removeSpeaker(${sp.id})">✕</button>
         </div>`;
     } else {
